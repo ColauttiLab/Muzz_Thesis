@@ -1,19 +1,71 @@
+# Load Packages
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lme4)
+
+# Load and view data
 dat<-read.csv("SeedPolData.csv",header=T)
 View(dat)
 
+# Inspect variables
 summary(dat)
-# Need to make factor: (pop)ulation, bulk, stem, (obs)erver, and (fr)ui(t) set
+str(dat)
 
+# Fix coding for trt variable
+levels(dat$trt)
+dat$trt[dat$trt==""]<-"UNP"
+dat$trt[dat$trt=="OP "]<-"OP"
+dat$trt<-factor(dat$trt) # Remove erroneous factors
+
+# Need to make factor: (pop)ulation, bulk, stem, (obs)erver, and (fr)ui(t) set
 dat$pop <- as.factor(dat$pop)
 dat$bulk <- as.factor(dat$bulk)
 dat$stem <- as.factor(dat$stem)
 dat$obs <- as.factor(dat$obs)
 dat$frt_set <- as.factor(dat$frt_set)
 
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(lme4)
+  
+# A quick look at treatment means
+qplot(plant_trt:trt,seedv,geom="boxplot",data=dat)
+
+# Full model
+trtmixmod<-lmer(seedv~plant_trt*trt*pop+(1|plantid:pop),data=dat)
+summary(trtmixmod)
+anova(trtmixmod)
+
+# Test 3-way effect
+trtmixmod2<-lmer(seedv~plant_trt*trt*pop-plant_trt:trt:pop+(1|plantid:pop),data=dat)
+anova(trtmixmod2,trtmixmod)
+
+# Test 2-way effects of population
+trtmixmod3<-lmer(seedv~plant_trt*trt*pop-plant_trt:trt:pop-trt:pop+(1|plantid:pop),data=dat)
+anova(trtmixmod3,trtmixmod2)
+trtmixmod4<-lmer(seedv~plant_trt*trt*pop-plant_trt:trt:pop-plant_trt:pop+(1|plantid:pop),data=dat)
+anova(trtmixmod4,trtmixmod2)
+
+# Test 2-way effects of trt:plant_trt
+trtmixmod5<-lmer(seedv~plant_trt*trt+(1|plantid:pop),data=dat)
+trtmixmod6<-lmer(seedv~plant_trt+trt+(1|plantid:pop),data=dat)
+anova(trtmixmod6,trtmixmod5)
+
+## ANALYSIS SUMMARY
+# No significant interactions with population
+# Significant interaction between pesticide treatment and pollination treatment
+
+## Test residuals of best model:
+# Test for normality of residuals
+shapiro.test(residuals(trtmixmod5))
+
+# Plot residuals from model against prediction
+qplot(predict(trtmixmod5),residuals(trtmixmod5))
+# plot residuals against observed values
+qplot(predict(trtmixmod5),predict(trtmixmod5)+residuals(trtmixmod5))
+# histogram plot of residuals
+qplot(residuals(trtmixmod5))
+
+# histogram plot of observed values
+qplot(predict(trtmixmod5)+residuals(trtmixmod5))
 
 
 # we want to find the mean for all (seed) (v)iable and (seed) (inv)iable of each plant. We will look at (H)and (P)ollinated flowers first
@@ -28,7 +80,6 @@ H_meaninv <- aggregate(seedinv ~ id, FUN = mean, data =datHP) # (H)and pollinate
 HP_mean <- full_join(H_meanv, H_meaninv, by = "id")
 
 HP_mean$seedratio <- HP_mean$seedv/(HP_mean$seedv + HP_mean$seedinv) # get ratio between viable and inviable per plant
-
 
 # repeat top code for (O)pen (P)ollinated treatement
 datOP <- dat %>%

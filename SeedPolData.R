@@ -27,7 +27,9 @@ dat$frt_set <- as.factor(dat$frt_set)
 
   
 # A quick look at treatment means
-qplot(plant_trt:trt,seedv,geom="boxplot",data=dat)
+qplot(plant_trt:trt,seedv,geom="boxplot",data=dat) +
+  geom_signif(comparisons = list(c("C:OP", "P:HP")), map_signif_level=TRUE) 
+  
 
 # Full model
 trtmixmod<-lmer(seedv~plant_trt*trt*pop+(1|plantid:pop),data=dat)

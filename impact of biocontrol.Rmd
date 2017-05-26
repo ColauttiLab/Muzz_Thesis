@@ -220,11 +220,11 @@ Part of understanding how the beetle impacts plant fitness is understanding how 
 ## calculate time to flowering, flowering date (relative to start), flowering duration 
 fdata<-as.data.frame(unique(Visitdata$indiv))
 names(fdata)<-"indiv"
-fdata$ftime<-NA ## time to flowering
 fdata$fday<-NA ## day of flowering
 fdata$fdur<-NA ## duration of flowering
 
 for (ind in unique(Visitdata$indiv)) {
+  # print(ind) ## Use for debugging
   # subset all rows for this individual
   individualdata<-Visitdata[Visitdata$indiv==ind,]
   # subset out rows with no measurements
@@ -232,12 +232,14 @@ for (ind in unique(Visitdata$indiv)) {
   # make indicator for days with a flower measurement
   individualdata$indicatorfstart<-ifelse(individualdata$flower>0, TRUE, FALSE)
   # find the first time that flowers is positive 
-  floweringday<-min(which(individualdata$indicatorfstart == TRUE))
-  # ftime is time to flowering, the day of first flower growth minus the start day of measurement
-  fdata[fdata$indiv==ind,]$ftime <- individualdata$yday[floweringday]- individualdata$yday[1]
+  fdata$fday[fdata$indiv==ind]<-NA
+  fdata$fdur[fdata$indiv==ind]<-NA
+  
+  if(sum(individualdata$indicatorfstart,na.rm=T)>0){
+    floweringday<-min(which(individualdata$indicatorfstart == TRUE))
   # fday is the day that flower growth first appears
   fday<- individualdata$yday[floweringday]
-  fdata[fdata$indiv==ind,]$fday<- fday
+  fdata$fday[fdata$indiv==ind]<- fday
   # subset data for only the visits with flowering, fruiting, or buds
   individualdata<-individualdata[individualdata$fruit>0 | individualdata$flower >0 | individualdata$bud>0,]
   # new indicator where bud and flowers both equal zero, there will only be fruit measurements
@@ -245,36 +247,43 @@ for (ind in unique(Visitdata$indiv)) {
   # find the first day with only fruit measurements, no flowers or buds, taken as maximum from last visit
   durend<- max(which(individualdata$indicatorfend == FALSE))
   # duration of flowering is the last day of flowering minus the first day of flower growth (as calculated above)
-  fdata[fdata$indiv==ind,]$fdur<-individualdata$yday[durend] - fday
+  fdata$fdur[fdata$indiv==ind]<-individualdata$yday[durend] - fday
+  }
 }
 
 #  Organize the data by treatment (for easy graphing)
 fdata<-na.omit(fdata)
 fdata$trt<-gsub("[0-9]","",fdata$indiv)
-test<-fdata[order(fdata$trt, fdata$ftime),]
-test$cumulative<-c(1:109, 1:129)
-test<-test[order(test$trt, decreasing=TRUE),]
 
-#  Remove point -- CHECK DATASET FOR PROBLEM
-test2 <- test %>% 
-  filter(fday <230)
+Cflr<-data.frame(trt="C",jday=sort(unique(fdata$fday)),cumflr=0)
+Pflr<-data.frame(trt="P",jday=sort(unique(fdata$fday)),cumflr=0)
+for(i in 1:nrow(Cflr)){
+  Cflr$cumflr[i]<-nrow(fdata[fdata$trt=="C" &
+                               fdata$fday<=ftime$jday[i],]) / 
+    length(grep("C",unique(ldata$indiv))) 
+  Pflr$cumflr[i]<-nrow(fdata[fdata$trt=="P" &
+                               fdata$fday<=ftime$jday[i],]) /
+    length(grep("P",unique(ldata$indiv))) 
+}
+ftime<-rbind(Cflr,Pflr)
+  
 ```
 
 ## Flowering time Plot
 
 ```{r}
-ggplot(test2, aes(x=fday, y=cumulative, color=trt)) +
-  geom_smooth() +
+ggplot(ftime, aes(x=jday, y=cumflr, color=trt)) +
+  geom_point() +
   theme_simple() +
   xlab("\nDay") +
-  ylab("# of flowering plants\n")
+  ylab("Proportion of flowering plants\n")
 ```
 
 ## Significance test
 
 We can use a linear model to see if there is a significant difference between treatment. Cumulative (seperate from initial 'cumulative' defined at the beginning) here is the number of cumulative flowering plants, seperated per treatment, per day. 
 ```{r}
-mod1 <- lm(fday ~ cumulative * trt, data = test2)
+mod1 <- lm(cumflr ~ jday * trt, data = ftime)
 anova(mod1)
 ```
 

@@ -140,7 +140,6 @@ apsum$sec_ap_pct_se<-apsum$sec_ap_pct_sd/sqrt(apsum$sec_ap_pct_N - 1)
 
 apsum$visitdate<-as.Date(apsum$visitdate)
 
-
 pd <- position_dodge(width = 2)
 
 ### SECONDARY BRANCHES
@@ -184,7 +183,8 @@ ggplot(aes(x=visitdate,y=sec_ap_pct,colour=trt),data=apsum)+
   xlab("\nDay") +
   ylab("Proportion of damaged apical meristems\n")
 
-
+mod1 <- lm(sec_ap_pct ~ trt * visitdate, data=apsum)
+anova(mod1)
 
 #### DAMAGE
 View(ldata)
@@ -209,7 +209,8 @@ ggplot(aes(x=visitdate,y=dmg_index,colour=trt),data=dmgsum)+
   xlab("\nDay") +
   ylab("Proportion of leaf damage\n") 
 
-
+mod1 <- lm(dmg_index ~ trt*visitdate, data=dmgsum)
+anova(mod1)
 
 
 
@@ -264,5 +265,3 @@ anova(mod1)
 dat2 <- ldata %>% 
   filter(date==16)
 
-
-dat3 <- 

@@ -1,0 +1,290 @@
+---
+title: "Muzz_Thesis 2016-17"
+author: "M. Abdur-Razak"
+date: "May 26, 2017"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Chapter 2 - Impact of Biocontrol
+
+Purple loosestrife (Lythrum *salicaria*) is an invasive species, introduced in North America from Europe in the 1800's. Since that time, it has rapidly propagated and evolved across its introduced range. In the 1990's, a biocontrol beetle was released to (effectively) maintain the fitness of North American Lythrum populations. The novel stress of the biocontrol beetle is of interest to evolutionary ecologists as Lythrum has undergone local adaptation and rapid evolution sans its main antagonist for ~200 years. 
+
+The following report contains the initial findings of biocontrol impact on a Lythrum population at the Queen's University Biological Station (QUBS). The conducted study, in Summer 2016, experimentally removed the biocontrol beetle from half of the marked individuals (n = 500) using the insecticide deltamethrin. The insecticide was applied in a checkerboard design across 22 transects. From June to August, individuals were visited every 4 days and measurements were taken on growth and phenological traits. Fitness was measured in seeds per plant - a function of seeds per fruit and fruit per plant measurements.  
+
+```{r, echo = FALSE}
+# Simplified/clean theme for plotting
+theme_simple <- function (base_size = 12, base_family = "") {
+  theme_classic(base_size = base_size, base_family = base_family) %+replace%
+    theme(
+      axis.text = element_text(colour = "black"),
+      axis.title.x = element_text(size=18),
+      axis.text.x = element_text(size=12),
+      axis.title.y = element_text(size=18,angle=90),
+      axis.text.y = element_text(size=12),
+      axis.ticks = element_blank(),
+      panel.background = element_rect(fill="white"),
+      panel.border = element_blank(),
+      plot.title=element_text(face="bold", size=24),
+      legend.position="none"
+    )  
+}
+```
+### load packages and data
+``` {r}
+library(dplyr)
+library(ggplot2)
+library(zoo)
+library(lubridate)
+```
+
+``` {r ldata}
+ldata<-read.csv("oe3c_dat.csv", header=T)
+names(ldata)
+```
+
+**indiv** - the unique identifier for an indiviual. For example, C001 and C002.  
+**date** - the visit date *number*. For example, June 10th is given a value of 1, July 4th is given 7, and August 17th is given 16.  
+**trt** - the treatment assigned to an indiviual, either C (**unsprayed**) or P (**sprayed**). For example, C065 and P065.  
+**bud** - the height (cm) of the bud.  
+**flower** - the height (cm) of the flower. Used in determining time to flowering.  
+**fruit** - the height (cm) of the fruit. Used in determining flower duration.  
+**adult** - the number of adults found on an individual at that visit.  
+**egg** - the number of eggs found on an individual at that visit.  
+**node** - Lythrum produces two opposite leaves at 'nodes' in intervals across each stem. Here, a node represents a couplet of leaves, used in estimating plant growth and in calculating the damage index.  
+**total** - total leaves on a plant. Estimated through node count.  
+**dmg_leave** - A count of individual leaves that had evidence of characteristic biocontrol "shot hole" damage.  
+**avg_dmg** - An estimate of average percent removal across all damaged leaves. Key fractions of percent removal, for example 1%, 5%, 10%, 25%, 50%, 75%, and 90% were used as a guide.  
+**dmg_index** - A standardized measurement of damage, from a scale of 0 to 1, that all plants could be placed on. **Index = (Damaged leaves / Total leaves) * (Average Damage / 100)**  
+**ap_dmg** - if a plant's apical mersitem was damaged (characteristic to the beetle's foraging behaviour), ap_dmg was given a value of 1. Else, it was kept as zero. Ap_dmg was always reserved for the primary stem.  
+**initial_beetle** - once a plant had branched due to apical mersitem damage on the primary, to keep record of the apical meristem damage across the plant and to track the change in new primary stems, initial_beetle (meaning the initial primary stem had its apical meristem damaged by beetles) was given a value of 1. The shift from ap_dmg = 1 & initial_beetle = 0 to ap_dmg = 0 & initial_beetle = 1 indicated a change in primary stem.  
+**sec_branch** - the number of secondary branches.  
+**sec_node** - similar to node count, but on the secondary branches
+**sec_branch_rep** - the number of secondary branches that have reached a reproductive stage
+**sec_ap1** - the number of damaged meristems (value of 1) on secondary branches (i.e. non-primary stems)
+**shoot_height** - the vegetative height (cm) of the primary stem (irrespective of ap_dmg) from the soil surface to the beginning of the reproductive developement.  
+**leaf_length** - the length (cm) of the longest leaf of the plant, usually taken in the mid section of the shoot_height.  
+**stem_width** - the width (mm) of the primary stem, taken at the thickest section along shoot_height.  
+**cumulative** - the cumulative reproductive height (cm) of the secondary branches.
+
+## Add Julian date to dataset based on visit day number
+```{r, warning=FALSE}
+#  Make a new dataframe to hold true dates of the year, rather than only visit date number
+Visitdata<-ldata
+Visitdata$date<-as.factor(Visitdata$date)
+
+#  Visit dates from 1 to 16 will be bound to actual dates in visitdate
+date<-c(1:16)
+visitdate<-c("2016/06/10","2016/06/14","2016/06/18","2016/06/22","2016/06/26","2016/06/30","2016/07/04","2016/07/12","2016/07/16","2016/07/20","2016/07/24", "2016/08/01", "2016/08/05", "2016/08/09", "2016/08/13", "2016/08/17")
+
+#  intermediate dataframe Vdat used to add actual dates into Visitdata, which will be used from hence
+Vdat<-as.data.frame(cbind(date,visitdate))
+Visitdata<- left_join(Visitdata, Vdat)
+Visitdata$yday <- yday(Visitdata$visitdate)
+```
+
+# Chapter 2.1 [Codename: Lucy Loosestrife] - How much damage does the biocontrol do?
+
+### Calculating leaf damage using dmg_index
+
+As explained above, we can use the data collected from the summer to calculate overall leaf damage across each entire plant using the equation: Index = (Damaged leaves / Total leaves) * (Average Damage / 100). The way it is coded below is by calculating the standard error (SE) using the standard deviation (SD) and the total number of plants (N) per treatment. We can then plot the SE to show the error bars (see leaf damage plot).  
+```{r}
+#  Variable to hold the actual Julian dates
+ldata$visitdate<-NA
+for(i in 1:nrow(Vdat)){
+  ldata$visitdate[ldata$date==Vdat$date[i]]<-paste0(Vdat$visitdate[i])
+}
+ldata$visitdate<-as.factor(ldata$visitdate)
+#  Calculate SE for dmg
+dmg_sd<-aggregate(dmg_index ~ trt + visitdate,data=ldata,FUN=sd,na.action=na.omit)
+names(dmg_sd)[3]<-"dmg_sd"
+dmg_N<-aggregate(dmg_index ~ trt + visitdate,data=ldata,FUN=length,na.action=na.omit)
+names(dmg_N)[3]<-"dmg_N"
+
+dmgsum<-aggregate(dmg_index ~ trt + visitdate,data=ldata,FUN=mean,na.action=na.omit)
+dmgsum<-merge(dmgsum,dmg_sd,by=c("trt","visitdate"))
+dmgsum<-merge(dmgsum,dmg_N,by=c("trt","visitdate"))
+dmgsum$dmg_se<-dmgsum$dmg_sd/sqrt(dmgsum$dmg_N - 1)
+```
+
+### Plotting leaf damage
+
+```{r}
+dmgsum$visitdate<-as.Date(dmgsum$visitdate)
+pd <- position_dodge(width = 2)
+
+ggplot(aes(x=visitdate,y=dmg_index,colour=trt),data=dmgsum)+
+  geom_errorbar(aes(ymin=dmg_index-1.96*dmg_se, ymax=dmg_index+1.96*dmg_se),position=pd, width=.1)+geom_point(position=pd) +
+  theme_simple() +
+  xlab("\nDay") +
+  ylab("Proportion of leaf damage\n") 
+```
+
+### Significance test
+
+```{r}
+mod1 <- lm(dmg_index ~ trt*visitdate, data=dmgsum)
+anova(mod1)
+```
+
+### Calculating apical mersitem damage
+
+Another important way of expressing overall damage is to look at how many apical meristems had a damage of one. Here, our code looks at the spread of apical meristem damage (or accumulated apical meristem damage) across the secondary branches (i.e when sec_ap1 >0). We can use the same method of calculating a plotting the standard error of apical meristem damage.
+
+```{r}
+#  Undamaged secondary meristems
+ldata$sec_ap_un<-ldata$sec_branch-ldata$sec_ap1
+#  Rename damaged apical meristems to punctured apical meristem (pct)
+ldata$sec_ap_pct<-ldata$sec_ap1
+
+
+#  Bind the average number of secondary branches with average damaged secondary meristems for each treatment per date 
+apsum<-aggregate(cbind(sec_branch,sec_ap_pct) ~ trt + visitdate,data=ldata,FUN=mean,na.action=na.omit)
+#  Calculate SE for secondary branches
+sec_branch_sd<-aggregate(sec_branch ~ trt + visitdate,data=ldata,FUN=sd,na.action=na.omit)
+names(sec_branch_sd)[3]<-"sec_branch_sd"
+sec_branch_N<-aggregate(sec_branch ~ trt + visitdate,data=ldata,FUN=length,na.action=na.omit)
+names(sec_branch_N)[3]<-"sec_branch_N"
+# Calculate SE for proportion damaged secondary branches
+sec_ap_pct_sd<-aggregate(sec_ap_pct ~ trt + visitdate,data=ldata,FUN=sd,na.action=na.omit)
+names(sec_ap_pct_sd)[3]<-"sec_ap_pct_sd"
+sec_ap_pct_N<-aggregate(sec_ap_pct ~ trt + visitdate,data=ldata,FUN=length,na.action=na.omit)
+names(sec_ap_pct_N)[3]<-"sec_ap_pct_N"
+
+# Merge everything
+apsum<-merge(apsum,sec_branch_sd,by=c("trt","visitdate"))
+apsum<-merge(apsum,sec_branch_N,by=c("trt","visitdate"))
+apsum$sec_branch_se<-apsum$sec_branch_sd/sqrt(apsum$sec_branch_N - 1)
+
+apsum<-merge(apsum,sec_ap_pct_sd,by=c("trt","visitdate"))
+apsum<-merge(apsum,sec_ap_pct_N,by=c("trt","visitdate"))
+apsum$sec_ap_pct_se<-apsum$sec_ap_pct_sd/sqrt(apsum$sec_ap_pct_N - 1)
+
+```
+
+### Plotting secondary apical meristem damage
+
+```{r}
+#  Change date from factor to date. This is for plotting purposes
+apsum$visitdate<-as.Date(apsum$visitdate)
+#  Add dodge to the points
+pd <- position_dodge(width = 2)
+
+ggplot(aes(x=visitdate,y=sec_ap_pct,colour=trt),data=apsum)+
+  geom_errorbar(aes(ymin=sec_ap_pct-1.96*sec_ap_pct_se, ymax=sec_ap_pct+1.96*sec_ap_pct_se),position=pd, width=.1)+geom_point(position=pd) +
+  theme_simple()+
+  xlab("\nDay") +
+  ylab("Proportion of damaged apical meristems\n")
+```
+
+### Sigificance test
+
+```{r}
+mod1 <- lm(sec_ap_pct ~ trt * visitdate, data=apsum)
+anova(mod1)
+```
+
+# Chapter 2.2 [Codename: Mykenzie the Summer Frenzy] - What was the effect of the beetle on growth and phenology 
+
+### The Predictive Model
+
+Because there was a significant difference in damage for our treatments, we can proceed with a predictive model. This model postulates that more damaged Lythrum will experience **more** branching, **delayed** flowering time, and **lower** fitness (seeds per plant). 
+
+### Plotting secondary branching over the season
+
+```{r}
+ggplot(aes(x=visitdate,y=sec_branch,colour=trt),data=apsum)+
+  geom_errorbar(aes(ymin=sec_branch-1.96*sec_branch_se, ymax=sec_branch+1.96*sec_branch_se),position=pd, width=.1)+geom_point(position=pd) +
+  theme_simple() +
+  xlab("\nDay") +
+  ylab("# of secondary branches\n")
+```
+
+### Significance test
+
+``` {r}
+mod1 <- lm(sec_branch ~ trt*visitdate, data=apsum)
+anova(mod1)
+```
+
+We can see here that there was no significant difference between branching. **NB: This is just for flowering plants. You need to check to see if there is a significant difference in unflowering plants, or just total plants together. Getting a proportion of plants that reached flowering could also be included as a graph, or perhaps as a line in your manuscript**
+
+### Calculating date of first flower
+
+Part of understanding how the beetle impacts plant fitness is understanding how it delays the time to flowering. In order to calculate the time to first flowering, we can create a for loop to go through each individual and scan for the first value where flower > 0 and it's corresponding date. We can also calculate flowering duration by scanning each indivual looking for when fruit > 0 and flower & bud == 0.
+
+``` {r}
+## calculate time to flowering, flowering date (relative to start), flowering duration 
+fdata<-as.data.frame(unique(Visitdata$indiv))
+names(fdata)<-"indiv"
+fdata$ftime<-NA ## time to flowering
+fdata$fday<-NA ## day of flowering
+fdata$fdur<-NA ## duration of flowering
+
+for (ind in unique(Visitdata$indiv)) {
+  # subset all rows for this individual
+  individualdata<-Visitdata[Visitdata$indiv==ind,]
+  # subset out rows with no measurements
+  individualdata<-individualdata[!is.na(individualdata$node),]
+  # make indicator for days with a flower measurement
+  individualdata$indicatorfstart<-ifelse(individualdata$flower>0, TRUE, FALSE)
+  # find the first time that flowers is positive 
+  floweringday<-min(which(individualdata$indicatorfstart == TRUE))
+  # ftime is time to flowering, the day of first flower growth minus the start day of measurement
+  fdata[fdata$indiv==ind,]$ftime <- individualdata$yday[floweringday]- individualdata$yday[1]
+  # fday is the day that flower growth first appears
+  fday<- individualdata$yday[floweringday]
+  fdata[fdata$indiv==ind,]$fday<- fday
+  # subset data for only the visits with flowering, fruiting, or buds
+  individualdata<-individualdata[individualdata$fruit>0 | individualdata$flower >0 | individualdata$bud>0,]
+  # new indicator where bud and flowers both equal zero, there will only be fruit measurements
+  individualdata$indicatorfend<-ifelse(individualdata$bud==0 & individualdata$flower==0, TRUE, FALSE)
+  # find the first day with only fruit measurements, no flowers or buds, taken as maximum from last visit
+  durend<- max(which(individualdata$indicatorfend == FALSE))
+  # duration of flowering is the last day of flowering minus the first day of flower growth (as calculated above)
+  fdata[fdata$indiv==ind,]$fdur<-individualdata$yday[durend] - fday
+}
+
+#  Organize the data by treatment (for easy graphing)
+fdata<-na.omit(fdata)
+fdata$trt<-gsub("[0-9]","",fdata$indiv)
+test<-fdata[order(fdata$trt, fdata$ftime),]
+test$cumulative<-c(1:109, 1:129)
+test<-test[order(test$trt, decreasing=TRUE),]
+
+#  Remove point -- CHECK DATASET FOR PROBLEM
+test2 <- test %>% 
+  filter(fday <230)
+```
+
+## Flowering time Plot
+
+```{r}
+ggplot(test2, aes(x=fday, y=cumulative, color=trt)) +
+  geom_smooth() +
+  theme_simple() +
+  xlab("\nDay") +
+  ylab("# of flowering plants\n")
+```
+
+## Significance test
+
+We can use a linear model to see if there is a significant difference between treatment. Cumulative (seperate from initial 'cumulative' defined at the beginning) here is the number of cumulative flowering plants, seperated per treatment, per day. 
+```{r}
+mod1 <- lm(fday ~ cumulative * trt, data = test2)
+anova(mod1)
+```
+
+As we see here, there is a significant difference in that damaged plants were delayed in their flowering.
+
+# Chapter 2.3 [Codename: Sierra salicaria] - How does the beetle affect fitness, and does it interfere with pollination?
+
+```{r}
+seed_dat <- read.csv("seeds_per_plant.csv", header=T)
+names(seed_dat)
+```
+
+Seeds per plant is used here as the 
